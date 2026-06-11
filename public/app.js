@@ -28,6 +28,10 @@
     iBBS: document.getElementById('iBBS'),
     indBB: document.getElementById('indBB'),
     indBBS: document.getElementById('indBBS'),
+    iMACD: document.getElementById('iMACD'),
+    iMACDSub: document.getElementById('iMACDSub'),
+    indMACD: document.getElementById('indMACD'),
+    mI: document.getElementById('mI'),
     iVD: document.getElementById('iVD'),
     iVDSub: document.getElementById('iVDSub'),
     indVD: document.getElementById('indVD'),
@@ -146,13 +150,23 @@
     setText('bT', new Date().toLocaleTimeString());
 
     // Indicators
+    const macd = (d.macd || {});
+    const useMacd = !!d.use_macd;
+    setText('iMACD', (macd.macd != null ? formatNumber(macd.macd) : '--'));
+    setText('iMACDSub', 'F:' + (d.macd_fast || 12) + ' S:' + (d.macd_slow || 26) + ' Sig:' + (d.macd_sig || 9));
+    const mSig = useMacd ? (macd.hist > 0 ? 'BULLISH' : macd.hist < 0 ? 'BEARISH' : 'NEUTRAL') : 'OFF';
+    setText('mI', mSig);
+    const mCls = mSig === 'BULLISH' ? 'ind bull' : mSig === 'BEARISH' ? 'ind bear' : 'ind neut';
+    addClass('indMACD', mCls);
+
+    // Existing BB stays for reference
     const bb = d.bb || {};
     setText('iBB', bb.mid ? '$' + formatNumber(bb.mid) : '--');
-    setText('iBBSub', 'P:' + (d.bbP || 20) + ' D:' + (d.bbD || 2));
-    const bbs = bb.signal || 'NEUTRAL';
+    setText('iBBSub', useMacd ? 'MACD Active' : 'P:' + (d.bbP || 20) + ' D:' + (d.bbD || 2));
+    const bbs = useMacd ? 'MACD' : (d.bb_sig || 'NEUTRAL');
     setText('iBBS', bbs);
-    addClass('indBB', bbs === 'BULLISH' ? 'ind bull' : bbs === 'BEARISH' ? 'ind bear' : 'ind neut');
-    addClass('indBBS', bbs === 'BULLISH' ? 'ind bull' : bbs === 'BEARISH' ? 'ind bear' : 'ind neut');
+    const bCls = useMacd ? 'ind neut' : bbs === 'BULLISH' ? 'ind bull' : bbs === 'BEARISH' ? 'ind bear' : 'ind neut';
+    addClass('indBB', bCls); addClass('indBBS', bCls);
 
     // Volume Delta placeholders
     setText('iVD', '0');

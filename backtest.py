@@ -1,4 +1,4 @@
-import math, requests, sys
+import math, os, requests, sys
 from datetime import datetime
 
 REST = 'https://api.bitget.com'
@@ -6,15 +6,33 @@ SYM = 'BTCUSDT'
 TF = '1m'
 TF5 = '5m'
 PRODUCT = 'USDT-FUTURES'
-LIMIT = 1000
+LIMIT = 2000
 
 SESSION = requests.Session()
 SESSION.verify = False
 
+# Proxy aware session (same logic as server.py)
+PROXIES = {}
+try:
+    r = SESSION.get('https://api.bitget.com/api/v2/mix/market/time', timeout=10, verify=False)
+    d = r.json()
+    if d.get('code') != '00000':
+        raise Exception('bitget probe failed')
+except Exception:
+    hp = os.environ.get('HTTP_PROXY', '')
+    hs = os.environ.get('HTTPS_PROXY', '')
+    if hs:
+        PROXIES = {'https': hs, 'http': hp or hs}
+    elif hp:
+        PROXIES = {'http': hp}
+if PROXIES:
+    SESSION.proxies = PROXIES
+
+# Preset MACD untuk target winrate 65-70%
 PRESETS = {
-    'A': {'sl': 5.0, 'tp': 10.0, 'bbD': 2.5, 'lev': 5, 'min_score': 4},
-    'B': {'sl': 5.0, 'tp': 15.0, 'bbD': 2.2, 'lev': 10, 'min_score': 4},
-    'C': {'sl': 3.0, 'tp': 20.0, 'bbD': 1.8, 'lev': 20, 'min_score': 3},
+    'M1': {'sl': 1.0, 'tp': 2.0, 'macd_fast': 12, 'macd_slow': 26, 'macd_sig': 9, 'lev': 10, 'min_score': 4},
+    'M2': {'sl': 1.5, 'tp': 3.0, 'macd_fast': 10, 'macd_slow': 21, 'macd_sig': 7, 'lev': 10, 'min_score': 4},
+    'M3': {'sl': 2.0, 'tp': 4.0, 'macd_fast': 8, 'macd_slow': 17, 'macd_sig': 9, 'lev': 10, 'min_score': 4},
 }
 
 
@@ -37,6 +55,26 @@ def to_candles(raw):
     return out
 
 
+def ema(vals, period):
+    k = 2 / (period + 1)
+    out = [sum(vals[:period]) / period]
+    for v in vals[period:]:
+        out.append(v * k + out[-1] * (1 - k))
+    return out
+
+
+def calc_macd(candles, fast, slow, sig):
+    closes = [x['c'] for x in candles]
+    if len(closes) < slow + sig:
+        return None
+    ema_fast = ema(closes, fast)
+    ema_slow = ema(closes, slow)
+    diff = [ema_fast[i] - ema_slow[i] for i in range(len(ema_slow))]
+    sig_line = ema(diff, sig)[-1]
+    hist = ema_fast[-1] - ema_slow[-1] - sig_line
+    return {'macd': ema_fast[-1] - ema_slow[-1], 'signal': sig_line, 'hist': hist}
+
+
 def calc_bb(candles, n, dev):
     if len(candles) < n:
         return None
@@ -54,14 +92,16 @@ def run_preset(pname, preset, data):
     pos = None
     last_entry_idx = -9999
     cooldown = 5
-    m5_bb_cache = {}
+    use_macd = True
+    m5_cache = {}
 
     for i in range(len(c1)):
         if i < 20:
             continue
         window = c1[max(0, i-100): i+1]
-        bb = calc_bb(window, preset['bbP'] if 'bbP' in preset else 20, preset['bbD'])
-        if not bb:
+        macd = calc_macd(window, preset['macd_fast'], preset['macd_slow'], preset['macd_sig'])
+        bb = calc_bb(window, 20, preset.get('bbD', 2.0))
+        if use_macd and not macd:
             continue
         close = c1[i]['c']
 
@@ -81,14 +121,19 @@ def run_preset(pname, preset, data):
         m5_ts = c1[i]['ts'] // 300000 * 300000
         m5_idx = next((idx for idx, v in enumerate(c5) if v['ts'] == m5_ts), None)
         m5_sig = 'NEUTRAL'
-        if m5_idx is not None and m5_idx >= 20:
-            m5_bb_cache.setdefault(m5_idx, calc_bb(c5[max(0, m5_idx-19): m5_idx+1], 20, 2.2))
-            m5_bb = m5_bb_cache[m5_idx]
-            if m5_bb:
-                if c5[m5_idx]['c'] > m5_bb['mid']:
+        if m5_idx is not None and m5_idx >= max(preset['macd_slow'], 20):
+            m5_cache.setdefault(m5_idx, calc_macd(c5[max(0, m5_idx-99): m5_idx+1], preset['macd_fast'], preset['macd_slow'], preset['macd_sig']))
+            m5 = m5_cache[m5_idx]
+            if m5:
+                if m5['hist'] > 0:
                     m5_sig = 'BULLISH'
-                elif c5[m5_idx]['c'] < m5_bb['mid']:
+                elif m5['hist'] < 0:
                     m5_sig = 'BEARISH'
+        elif m5_idx is not None and m5_idx >= 20 and bb:
+            if c5[m5_idx]['c'] > bb.get('mid', 0):
+                m5_sig = 'BULLISH'
+            elif c5[m5_idx]['c'] < bb.get('mid', 0):
+                m5_sig = 'BEARISH'
 
         dom = 'NEUTRAL'
         if bb:
@@ -99,10 +144,16 @@ def run_preset(pname, preset, data):
 
         bs = 0
         ss = 0
-        if bb and close > bb['mid']:
-            bs += 1
-        elif bb and close < bb['mid']:
-            ss += 1
+        if use_macd:
+            if macd and macd['hist'] > 0:
+                bs += 1
+            elif macd and macd['hist'] < 0:
+                ss += 1
+        else:
+            if bb and close > bb['mid']:
+                bs += 1
+            elif bb and close < bb['mid']:
+                ss += 1
         if cvd > 0:
             bs += 1
         elif cvd < 0:
@@ -116,8 +167,9 @@ def run_preset(pname, preset, data):
         elif dom == 'RESISTANCE':
             ss += 1
 
-        buy_ok = bs >= preset['min_score']
-        sell_ok = ss >= preset['min_score']
+        # Selektivitas ekstrem: butuh semua 4 komponen cocok + konfirmasi M5
+        buy_ok = bs >= preset['min_score'] and m5_sig == 'BULLISH'
+        sell_ok = ss >= preset['min_score'] and m5_sig == 'BEARISH'
 
         if pos:
             ep = pos['ep']
@@ -132,17 +184,12 @@ def run_preset(pname, preset, data):
             elif pos['side'] == 'SELL' and close >= pos['sl']:
                 trades.append({'pnl': usdt, 'side': 'SELL', 'reason': 'SL'})
                 pos = None
-            elif bb and ((pos['side'] == 'BUY' and close < bb['mid']) or (pos['side'] == 'SELL' and close > bb['mid'])):
-                trades.append({'pnl': usdt, 'side': pos['side'], 'reason': 'BB_REVERSAL'})
-                pos = None
             else:
                 if usdt >= pos.get('lock', 0) + 1.0:
                     pos['lock'] = usdt
             continue
 
         if i - last_entry_idx < cooldown:
-            continue
-        if not buy_ok and not sell_ok:
             continue
         if m5_sig == 'BULLISH' and buy_ok and i - last_entry_idx >= cooldown:
             price = close

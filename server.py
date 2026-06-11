@@ -54,6 +54,10 @@ DEFAULT_CVD_PERIOD=20
 DEFAULT_DOM_PERIOD=20
 DEFAULT_COOLDOWN_MS=5000
 MIN_INDICATOR_SCORE=3
+DEFAULT_USE_MACD=True
+MACD_FAST=12
+MACD_SLOW=26
+MACD_SIG=9
 MAX_OPEN_ERROR_RATIO=0.05
 MAX_OPEN_ERROR_MS=30000
 MIN_MANAGE_INTERVAL_MS=100
@@ -137,6 +141,12 @@ def make_state():
         'daily_drawdown_limit_pct':5.0,
         'daily_drawdown_breached':False,
         'daily_drawdown_date':datetime.now().strftime('%Y-%m-%d'),
+        'use_macd':DEFAULT_USE_MACD,
+        'macd_fast':MACD_FAST,
+        'macd_slow':MACD_SLOW,
+        'macd_sig':MACD_SIG,
+        'macd':{'macd':0.0,'signal':0.0,'hist':0.0},
+        'm5_macd':{'macd':0.0,'signal':0.0,'hist':0.0},
     }
 
 daily_start_balance_default=1000.0
@@ -415,6 +425,63 @@ def bb_check():
         return 'NEUTRAL'
 
 
+def calc_macd():
+    """
+    MACD (Moving Average Convergence Divergence)
+    - fast EMA, slow EMA, signal EMA(hist)
+    - hist = macd - signal
+    """
+    try:
+        c = S['candles']
+        n = S.get('macd_slow', 26)
+        if len(c) < n:
+            return
+        closes = [x['c'] for x in c]
+        fast = S.get('macd_fast', 12)
+        slow = S.get('macd_slow', 26)
+        sig = S.get('macd_sig', 9)
+
+        def ema(vals, period):
+            k = 2 / (period + 1)
+            out = [sum(vals[:period]) / period]
+            for v in vals[period:]:
+                out.append(v * k + out[-1] * (1 - k))
+            return out
+
+        if len(closes) < slow + sig:
+            return
+        ema_fast = ema(closes, fast)
+        ema_slow = ema(closes, slow)
+        offset = slow - fast
+        macd_line = ema_fast[-1] - ema_slow[-1]
+        # Build signal from recent macd values approx
+        diff = [ema_fast[i] - ema_slow[i] for i in range(len(ema_slow))]
+        sig_line = ema(diff, sig)[-1]
+        hist = macd_line - sig_line
+        S['macd'] = {'macd': macd_line, 'signal': sig_line, 'hist': hist}
+    except Exception as e:
+        log('MACD ERR: ' + str(e), 'err')
+
+
+def macd_check():
+    """
+    MACD signal:
+      hist > 0           -> BULLISH
+      hist < 0           -> BEARISH
+      crossing up/down   -> STRONGER
+    """
+    try:
+        m = S.get('macd', {})
+        hist = m.get('hist', 0)
+        if hist > 0:
+            return 'BULLISH'
+        elif hist < 0:
+            return 'BEARISH'
+        return 'NEUTRAL'
+    except:
+        return 'NEUTRAL'
+
+
 def calc_vd():
     """
     VOLUME DELTA + CVD (Periode 14)
@@ -516,22 +583,34 @@ def calc_dom():
 
 
 def calc_m5_sig():
-    """M5 trend signal using BB14"""
+    """M5 trend signal using MACD primary"""
     try:
         c=S['m5_candles']
-        n=S['bbP']
-        if len(c)<n: return 'NEUTRAL'
-        closes=[x['c'] for x in c[-n:]]
-        sma=sum(closes)/len(closes)
-        variance=sum((v-sma)**2 for v in closes)/len(closes)
-        std=math.sqrt(variance)
-        last=closes[-1]
-        upper=sma+S['bbD']*std
-        lower=sma-S['bbD']*std
-        if last>upper: return 'OVERBOUGHT'
-        elif last>sma: return 'BULLISH'
-        elif last<lower: return 'OVERSOLD'
-        elif last<sma: return 'BEARISH'
+        if len(c)<max(26,9)+9: return 'NEUTRAL'
+        closes=[x['c'] for x in c]
+        fast = S.get('macd_fast', 12)
+        slow = S.get('macd_slow', 26)
+        sign = S.get('macd_sig', 9)
+
+        def ema(vals, period):
+            k = 2 / (period + 1)
+            out = [sum(vals[:period]) / period]
+            for v in vals[period:]:
+                out.append(v * k + out[-1] * (1 - k))
+            return out
+
+        if len(closes) < slow + sign:
+            return 'NEUTRAL'
+        ema_fast = ema(closes, fast)
+        ema_slow = ema(closes, slow)
+        diff = [ema_fast[i] - ema_slow[i] for i in range(len(ema_slow))]
+        sig_line = ema(diff, sign)[-1]
+        hist = ema_fast[-1] - ema_slow[-1] - sig_line
+        S['m5_macd']={'macd': ema_fast[-1] - ema_slow[-1],'signal': sig_line,'hist': hist}
+        if hist > 0:
+            return 'BULLISH'
+        elif hist < 0:
+            return 'BEARISH'
         return 'NEUTRAL'
     except Exception as e:
         log('M5 SIG ERR: '+str(e),'err')
@@ -625,8 +704,8 @@ def place(side,price):
     if S.get('order_type','market')=='limit' and c:
         price=_limit_price_for_side(side, c)
     qty=_qty(price)
-    if side=='BUY': sl=price*(1-S['sl']/100);tp=price*(1+S['tp']/100)
-    else: sl=price*(1+S['sl']/100);tp=price*(1-S['tp']/100)
+    if side=='BUY': sl=price-S['sl'];tp=price+S['tp']
+    else: sl=price+S['sl'];tp=price-S['tp']
     score=S.get('buy_score' if side=='BUY' else 'sell_score',0)
     if S['mode']=='real' and b<=REAL_EXEC_MIN_BALANCE:
         log('[ANALYZE-ONLY] '+side+' bal='+str(round(b,2))+' score='+str(score)+'/4 SL='+str(round(sl,2))+' TP='+str(round(tp,2))+' total_pnl='+str(round(S['pnl'],2))+' wins='+str(S['wins'])+' losses='+str(S['losses']));return
@@ -726,21 +805,27 @@ def rt_pnl():
 def strategy():
     try:
         c=S['candles']
-        if len(c)<max(S['bbP'],5): return
+        if len(c)<max(S.get('macd_slow',26),5): return
 
         calc_bb()
+        calc_macd()
         calc_vd()
-        S['bb_sig']=bb_check()
         S['dom']=calc_dom()
         S['m5_sig']=calc_m5_sig()
 
+        macd_sig = S.get('macd', {}).get('hist', 0)
         cvdB=S['cvd']>0;cvdS=S['cvd']<0
         vdB=S['vd']>0;vdS=S['vd']<0
         d=S['dom'];cl=c[-1]['c'];now=time.time()*1000
 
         bs=0;ss=0
-        if S['bb_sig']=='BULLISH': bs+=1
-        elif S['bb_sig']=='BEARISH': ss+=1
+        if S.get('use_macd', True):
+            if macd_sig > 0: bs += 1
+            elif macd_sig < 0: ss += 1
+        else:
+            S['bb_sig']=bb_check()
+            if S['bb_sig']=='BULLISH': bs+=1
+            elif S['bb_sig']=='BEARISH': ss+=1
         if cvdB: bs+=1
         if cvdS: ss+=1
         if vdB: bs+=1
@@ -987,6 +1072,31 @@ def update_config():
             v=float(d['min_profit_target_usdt'])
             if v>=0 and S.get('min_profit_target_usdt')!=v:
                 S['min_profit_target_usdt']=v;changed.append('MIN_PROFIT='+str(v))
+        except Exception:
+            pass
+    if 'use_macd' in d:
+        v=bool(d['use_macd'])
+        if S.get('use_macd')!=v:
+            S['use_macd']=v;changed.append('USE_MACD='+str(v))
+    if 'macd_fast' in d:
+        try:
+            v=int(d['macd_fast'])
+            if v>0 and S.get('macd_fast')!=v:
+                S['macd_fast']=v;changed.append('MACD_FAST='+str(v))
+        except Exception:
+            pass
+    if 'macd_slow' in d:
+        try:
+            v=int(d['macd_slow'])
+            if v>0 and S.get('macd_slow')!=v:
+                S['macd_slow']=v;changed.append('MACD_SLOW='+str(v))
+        except Exception:
+            pass
+    if 'macd_sig' in d:
+        try:
+            v=int(d['macd_sig'])
+            if v>0 and S.get('macd_sig')!=v:
+                S['macd_sig']=v;changed.append('MACD_SIG='+str(v))
         except Exception:
             pass
     if changed:
