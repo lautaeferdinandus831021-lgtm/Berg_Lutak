@@ -831,6 +831,7 @@ def build():
         'pnl_detail':{
             'last_price':S['last_price'],
             'price_move_per_unit':(S['last_price']-S['pos']['ep']) if S['pos'] else 0,
+            'fee_rate':round(S.get('_fee_rate',0.0005),6),
         },
         'trail_on':S['trail_on'],'trail_hi':round(S['trail_hi'],2),'trail_lock':round(S['trail_lock'],2),
         'log':S['log'],'connected':S['ws_ok'],'ticker':S['ticker'],
@@ -842,7 +843,7 @@ def build():
         'asks_detail':S['asks_detail'],'bids_detail':S['bids_detail'],
         'dom_cvd':S['dom_cvd'],'dom_count':len(S['dom_hist']),'m5_sig':S['m5_sig'],
         'err_count':S['err_count'],'loop_ok':S['loop_ok'],
-        'pnl_per_sec':round(S['pnl_per_sec'],4),'balance_lock':round(S['balance_lock'],2),'pnl_locks_total':round(S['pnl_locks_total'],2),
+        'pnl_per_sec':round(S['pnl_per_sec'],4),'fee_rate':round(S.get('_fee_rate',0.0005),6),'balance_lock':round(S['balance_lock'],2),'pnl_locks_total':round(S['pnl_locks_total'],2),
     }
 
 # ROUTES
@@ -947,14 +948,21 @@ def stats():
         'balance':round(bal(),2),
         'sl_pct':round(S.get('sl',0.0),2),
         'tp_pct':round(S.get('tp',0.0),2),
+        'fee_rate':round(S.get('_fee_rate',0.0005),6),
         'order_type':S.get('order_type','market'),
         'mode':S.get('mode','demo'),
+        'trades':S.get('trades',[])[:20],
         'can_execute':can_exec()
     })
 
 @app.route('/api/export/trades')
 def export_trades():
-    return jsonify({'ok':True,'trades':S.get('trades',[])})
+    trades=[]
+    for t in S.get('trades',[]):
+        out=dict(t)
+        out.setdefault('fee_rate', round(S.get('_fee_rate',0.0005),6))
+        trades.append(out)
+    return jsonify({'ok':True,'trades':trades})
 
 
 @app.route('/api/config',methods=['POST'])
