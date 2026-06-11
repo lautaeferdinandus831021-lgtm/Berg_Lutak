@@ -18,10 +18,10 @@ source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 
-if [ -f "bot/server.py" ]; then
-  exec python -u bot/server.py
-elif [ -f "server.py" ]; then
+if [ -f "server.py" ]; then
   exec python -u server.py
+elif [ -f "bot/server.py" ]; then
+  exec python -u bot/server.py
 else
   export FLASK_APP=server.py
   exec python -m flask run --host=0.0.0.0 --port=5000
