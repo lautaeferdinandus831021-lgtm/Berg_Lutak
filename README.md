@@ -8,28 +8,22 @@ Bot trading Bitget USDT-Futures (demo/real) dengan sinyal BB + VD + CVD + DOM. D
 - Realtime state, stats, export trade via HTTP API
 - Daily drawdown guard + analysis-only guard untuk real mode
 
-## Headless setup (clone and run)
-
-From a fresh environment:
+## Penggunaan `start.sh` (minimal)
 
 ```bash
-git clone https://github.com/<user>/<repo>.git
-cd <repo>
+chmod +x start.sh
 ./start.sh
 ```
 
-`start.sh` akan:
-1. Cek `python3`
-2. Buat venv `.venv` (sekali)
-3. `pip install -r requirements.txt`
-4. Jalankan bot
+Yang dilakukan `start.sh`:
+- membuat virtual env `.venv` jika belum ada
+- install dependensi dari `requirements.txt`
+- menjalankan bot lewat `python3.13 -u bot/server.py`
 
-## API
-
-Setelah start:
-- `http://localhost:5000/api/state` -> JSON state
-- `http://localhost:5000/api/stats` -> ringkasan performa
-- `http://localhost:5000/api/export/trades` -> history trade
+Catatan:
+- Default mode adalah `demo`
+- Port default `5000`
+- Untuk stop, matikan proses yang berjalan atau gunakan endpoint `/api/stop`
 
 ## Konfigurasi awal
 - Salin `.env.example` menjadi `.env`
