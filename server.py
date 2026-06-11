@@ -945,9 +945,10 @@ def stats():
         'winrate_pct':round(wr,2) if wr is not None else None,
         'pnl':round(S.get('pnl',0.0),2),
         'balance':round(bal(),2),
-        'trades':S.get('trades',[])[:20],
-        'm5_sig':S.get('m5_sig'),
+        'sl_pct':round(S.get('sl',0.0),2),
+        'tp_pct':round(S.get('tp',0.0),2),
         'order_type':S.get('order_type','market'),
+        'mode':S.get('mode','demo'),
         'can_execute':can_exec()
     })
 
