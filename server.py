@@ -235,20 +235,21 @@ def api_get_signed(path,label=''):
 
 # FETCH
 def fetch_candles():
-    log('Fetching candles '+S['sym']+' '+S['tf']+'...')
-    d=api_get('/api/v2/mix/market/candles?symbol='+S['sym']+'&granularity='+S['tf']+'&productType='+pt()+'&limit=100')
+    product_type = pt()
+    log('Fetching candles '+S['sym']+' '+S['tf']+' product='+product_type+'...')
+    d=api_get('/api/v2/mix/market/candles?symbol='+S['sym']+'&granularity='+S['tf']+'&productType='+product_type+'&limit=100')
     if not d or d.get('code')!='00000' or not d.get('data'):
-        log('Candles FAILED: '+str(d.get('msg','') if d else 'no response'),'err') False
+        log('Candles FAILED: '+str(d.get('msg','') if d else 'no response')+' mode='+S['mode'],'err');return False
     raw=d['data']
     if isinstance(raw,dict): raw=raw.get('candles',raw.get('data',[]))
     if not isinstance(raw,list) or len(raw)==0:
-        log('Candles: empty data','err') False
+        log('Candles: empty data mode='+S['mode'],'err');return False
     cs=[]
     for c in raw:
         cs.append({'ts':int(c[0]),'o':float(c[1]),'h':float(c[2]),'l':float(c[3]),'c':float(c[4]),'v':float(c[5])})
     cs.sort(key=lambda x:x['ts'])
     S['candles']=cs;S['api_ok']=True
-    log('CANDLES OK: '+str(len(cs))+' last='+str(cs[-1]['c']),'ok')
+    log('CANDLES OK: mode='+S['mode']+' count='+str(len(cs))+' last='+str(cs[-1]['c']),'ok')
     return True
 
 def fetch_m5_candles():
@@ -758,11 +759,7 @@ def chk_exit():
     pr=c[-1]['c']
     if p['side']=='BUY' and pr<=p['sl']: do_close(pr,'SL');S['reversed']=True;return
     if p['side']=='SELL' and pr>=p['sl']: do_close(pr,'SL');S['reversed']=True;return
-    mid=S['bb'].get('mid',0)
-    if not mid: return
-    if p['side']=='BUY' and pr<mid: do_close(pr,'BB_REVERSAL');S['reversed']=True
-    elif p['side']=='SELL' and pr>mid: do_close(pr,'BB_REVERSAL');S['reversed']=True
-    else: trailing(pr)
+    trailing(pr)
 
 def _baseline_ok(side, price):
     """Baseline PnL guard: prevent immediate re-entry after a loss."""
