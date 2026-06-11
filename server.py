@@ -238,11 +238,11 @@ def fetch_candles():
     log('Fetching candles '+S['sym']+' '+S['tf']+'...')
     d=api_get('/api/v2/mix/market/candles?symbol='+S['sym']+'&granularity='+S['tf']+'&productType='+pt()+'&limit=100')
     if not d or d.get('code')!='00000' or not d.get('data'):
-        log('Candles FAILED: '+str(d.get('msg','') if d else 'no response'),'err');return False
+        log('Candles FAILED: '+str(d.get('msg','') if d else 'no response'),'err') False
     raw=d['data']
     if isinstance(raw,dict): raw=raw.get('candles',raw.get('data',[]))
     if not isinstance(raw,list) or len(raw)==0:
-        log('Candles: empty data','err');return False
+        log('Candles: empty data','err') False
     cs=[]
     for c in raw:
         cs.append({'ts':int(c[0]),'o':float(c[1]),'h':float(c[2]),'l':float(c[3]),'c':float(c[4]),'v':float(c[5])})
@@ -256,11 +256,11 @@ def fetch_m5_candles():
     log('Fetching M5 candles '+S['sym']+' '+S['tf5']+'...')
     d=api_get('/api/v2/mix/market/candles?symbol='+S['sym']+'&granularity='+S['tf5']+'&productType='+pt()+'&limit=100')
     if not d or d.get('code')!='00000' or not d.get('data'):
-        log('Candles M5 FAILED: '+str(d.get('msg','') if d else 'no response'),'err');return
+        log('Candles M5 FAILED: '+str(d.get('msg','') if d else 'no response'),'err')
     raw=d['data']
     if isinstance(raw,dict): raw=raw.get('candles',raw.get('data',[]))
     if not isinstance(raw,list) or len(raw)==0:
-        log('Candles M5: empty data','err');return
+        log('Candles M5: empty data','err')
     cs=[]
     for c in raw:
         cs.append({'ts':int(c[0]),'o':float(c[1]),'h':float(c[2]),'l':float(c[3]),'c':float(c[4]),'v':float(c[5])})
@@ -708,7 +708,8 @@ def place(side,price):
     else: sl=price+S['sl'];tp=price-S['tp']
     score=S.get('buy_score' if side=='BUY' else 'sell_score',0)
     if S['mode']=='real' and b<=REAL_EXEC_MIN_BALANCE:
-        log('[ANALYZE-ONLY] '+side+' bal='+str(round(b,2))+' score='+str(score)+'/4 SL='+str(round(sl,2))+' TP='+str(round(tp,2))+' total_pnl='+str(round(S['pnl'],2))+' wins='+str(S['wins'])+' losses='+str(S['losses']));return
+        log('[ANALYSIS-ONLY] mode=real balance='+str(round(b,2))+' -> signal='+side+' score='+str(score)+'/4 SL='+str(round(sl,2))+' TP='+str(round(tp,2))+' (trade blocked until balance > '+str(REAL_EXEC_MIN_BALANCE)+' USDT)')
+        return
     log(side+' '+str(qty)+' @ '+str(round(price,2))+' SL:'+str(round(sl,2))+' TP:'+str(round(tp,2))+' type='+S.get('order_type','market'),'ok')
     if S['mode']=='real' and API_KEY!='DEMO':
         try:
@@ -718,8 +719,8 @@ def place(side,price):
             bs=json.dumps(body);h=bg_hdr('POST','/api/v2/mix/order/place-order',bs)
             r=HTTP.post(REST+'/api/v2/mix/order/place-order',json=body,headers=h,timeout=30)
             d=r.json()
-            if d.get('code')!='00000': log('Order fail: '+str(d),'err');return
-        except Exception as e: log('Order err: '+str(e),'err');return
+            if d.get('code')!='00000': log('Order fail: '+str(d),'err')
+        except Exception as e: log('Order err: '+str(e),'err')
     if not (S['mode']=='real' and b<=REAL_EXEC_MIN_BALANCE):
         S['pos']={'side':side,'ep':price,'sl':sl,'tp':tp,'qty':str(qty),'t':time.time()}
         S['trail_on']=False;S['trail_hi']=0;S['trail_lock']=0
