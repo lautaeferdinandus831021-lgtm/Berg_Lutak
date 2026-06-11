@@ -120,6 +120,9 @@
     // Source
     setText('sSrc', d.connected ? 'WS' : 'REST');
 
+    // Order type
+    setText('sOrd', 'ORDER:' + (d.order_type || 'market').toUpperCase());
+
     // Age
     const tick = d.ticker || {};
     setText('tP', '$' + formatNumber(d.price || 0));
