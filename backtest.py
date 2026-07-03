@@ -6,33 +6,31 @@ SYM = 'BTCUSDT'
 TF = '1m'
 TF5 = '5m'
 PRODUCT = 'USDT-FUTURES'
-LIMIT = 2000
+LIMIT = 1000
 
 SESSION = requests.Session()
 SESSION.verify = False
 
 # Proxy aware session (same logic as server.py)
 PROXIES = {}
-try:
-    r = SESSION.get('https://api.bitget.com/api/v2/mix/market/time', timeout=10, verify=False)
-    d = r.json()
-    if d.get('code') != '00000':
-        raise Exception('bitget probe failed')
-except Exception:
-    hp = os.environ.get('HTTP_PROXY', '')
-    hs = os.environ.get('HTTPS_PROXY', '')
-    if hs:
-        PROXIES = {'https': hs, 'http': hp or hs}
-    elif hp:
-        PROXIES = {'http': hp}
+for _var in ('HTTPS_PROXY', 'HTTP_PROXY', 'https_proxy', 'http_proxy'):
+    _val = os.environ.get(_var, '')
+    if _val:
+        PROXIES['https'] = _val
+        PROXIES['http'] = _val
+        break
+if not PROXIES:
+    _tor = os.environ.get('TOR_SOCKS', '')
+    if _tor:
+        PROXIES = {'http': _tor, 'https': _tor}
 if PROXIES:
     SESSION.proxies = PROXIES
 
 # Preset MACD untuk target winrate 65-70%
 PRESETS = {
-    'M1': {'sl': 1.0, 'tp': 2.0, 'macd_fast': 12, 'macd_slow': 26, 'macd_sig': 9, 'lev': 10, 'min_score': 4},
-    'M2': {'sl': 1.5, 'tp': 3.0, 'macd_fast': 10, 'macd_slow': 21, 'macd_sig': 7, 'lev': 10, 'min_score': 4},
-    'M3': {'sl': 2.0, 'tp': 4.0, 'macd_fast': 8, 'macd_slow': 17, 'macd_sig': 9, 'lev': 10, 'min_score': 4},
+    'M1': {'sl': 1.0, 'tp': 2.0, 'macd_fast': 12, 'macd_slow': 26, 'macd_sig': 9, 'lev': 10, 'min_score': 3},
+    'M2': {'sl': 1.5, 'tp': 3.0, 'macd_fast': 10, 'macd_slow': 21, 'macd_sig': 7, 'lev': 10, 'min_score': 3},
+    'M3': {'sl': 2.0, 'tp': 4.0, 'macd_fast': 8, 'macd_slow': 17, 'macd_sig': 9, 'lev': 10, 'min_score': 3},
 }
 
 
@@ -40,11 +38,15 @@ def api_get(path):
     try:
         r = SESSION.get(REST + path, timeout=20)
         d = r.json()
+        if not isinstance(d, dict):
+            return []
         if d.get('code') == '00000':
             return d.get('data', [])
-    except Exception:
-        pass
-    return []
+        print('api_get non-ok', d.get('code'), d.get('msg'), path)
+        return []
+    except Exception as e:
+        print('api_get exception', e, path)
+        return []
 
 
 def to_candles(raw):
