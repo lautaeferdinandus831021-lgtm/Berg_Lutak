@@ -543,4 +543,14 @@
     if (!confirm('Close current position?')) return;
     try { await fetch('/api/close', { method: 'POST' }); toast('Close sent', 'warn'); } catch (e) { toast('Error: ' + e.message, 'err'); }
   }
+  window.togC = togC;
+  window.saveK = saveK;
+  window.saveT = saveT;
+  window.saveI = saveI;
+  window.setMode = setMode;
+  window.botGo = botGo;
+  window.botStop = botStop;
+  window.execGo = execGo;
+  window.execStop = execStop;
+  window.botClose = botClose;
 })();

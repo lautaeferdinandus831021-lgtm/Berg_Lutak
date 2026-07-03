@@ -1042,7 +1042,6 @@ def stop_bot():
         try: S['ws'].close()
         except: pass
     log('Bot stopped','warn')
-    threading.Thread(target=_shutdown_server, daemon=True).start()
     return jsonify({'ok':True})
 
 @app.route('/api/close',methods=['POST'])
