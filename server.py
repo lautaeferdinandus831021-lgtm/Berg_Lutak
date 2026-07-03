@@ -9,7 +9,7 @@ urllib3.disable_warnings()
 from dotenv import load_dotenv
 load_dotenv()
 
-app=Flask(__name__,static_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)),'public'))
+app=Flask(__name__,static_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)),'public'),static_url_path='')
 
 def _load_bitget_creds():
     # 1) .env first
