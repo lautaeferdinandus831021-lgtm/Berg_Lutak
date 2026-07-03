@@ -104,6 +104,19 @@ def detect_proxy():
 
     print('  Proxy    : NONE - will try direct anyway')
 
+def _try_socks5_proxy(host, port):
+    try:
+        import socket
+        with socket.create_connection((host, port), timeout=2):
+            return True
+    except Exception:
+        return False
+
+# Auto-detect local Tor SOCKS5 when direct is blocked
+if not PROXIES and _try_socks5_proxy('127.0.0.1', 9050):
+    PROXIES = {'https': 'socks5h://127.0.0.1:9050', 'http': 'socks5h://127.0.0.1:9050'}
+    print('  Proxy    : AUTO Tor 127.0.0.1:9050')
+
 detect_proxy()
 
 HTTP=req_lib.Session();HTTP.verify=False;HTTP.timeout=30
@@ -147,6 +160,9 @@ def make_state():
         'macd_sig':MACD_SIG,
         'macd':{'macd':0.0,'signal':0.0,'hist':0.0},
         'm5_macd':{'macd':0.0,'signal':0.0,'hist':0.0},
+        'executing':False,
+        'vd_hist':[],'cvd_hist':[],'macd_hist':[],'m5_macd_hist':[],
+        'vd5':0.0,'cvd5':0.0,'vd5_hist':[],'cvd5_hist':[],
     }
 
 daily_start_balance_default=1000.0
@@ -267,6 +283,9 @@ def fetch_m5_candles():
         cs.append({'ts':int(c[0]),'o':float(c[1]),'h':float(c[2]),'l':float(c[3]),'c':float(c[4]),'v':float(c[5])})
     cs.sort(key=lambda x:x['ts'])
     S['m5_candles']=cs
+    S['vd5'], S['cvd5'] = calc_vd(S['m5_candles'], target_state=S)
+    S['vd5_hist'] = (S.get('vd5_hist') or [])[-199:] + [S['vd5']]
+    S['cvd5_hist'] = (S.get('cvd5_hist') or [])[-199:] + [S['cvd5']]
     log('CANDLES M5 OK: '+str(len(cs))+' last='+str(cs[-1]['c']),'ok')
 
 def fetch_ticker():
@@ -455,11 +474,12 @@ def calc_macd():
         ema_slow = ema(closes, slow)
         offset = slow - fast
         macd_line = ema_fast[-1] - ema_slow[-1]
-        # Build signal from recent macd values approx
-        diff = [ema_fast[i] - ema_slow[i] for i in range(len(ema_slow))]
+        # Align fast/slow EMA series before building signal
+        diff = [ema_fast[i + offset] - ema_slow[i] for i in range(len(ema_slow))]
         sig_line = ema(diff, sig)[-1]
         hist = macd_line - sig_line
         S['macd'] = {'macd': macd_line, 'signal': sig_line, 'hist': hist}
+        S['macd_hist'] = (S.get('macd_hist') or [])[-199:] + [{'macd': macd_line, 'signal': sig_line, 'hist': hist}]
     except Exception as e:
         log('MACD ERR: ' + str(e), 'err')
 
@@ -483,44 +503,36 @@ def macd_check():
         return 'NEUTRAL'
 
 
-def calc_vd():
+def calc_vd(target_candles=None, target_state=None):
     """
     VOLUME DELTA + CVD (Periode 14)
-    ===============================
-    - CurVD = Volume Delta candle berlangsung (approximation buy/sell)
-    - VD    = CurVD (detail per candle yang sedang berlangsung)
-    - CVD   = Cumulative Volume Delta 14 candle terakhir
+    - target_candles: list of candles (default S['candles'])
+    - target_state: state dict to write (default S)
     """
+    tgt = target_state if target_state is not None else S
+    c = target_candles if target_candles is not None else S['candles']
+    n = tgt.get('cvdP', S.get('cvdP', 20))
     try:
-        c = S['candles']
-        n = S['cvdP']
-
-        if len(c) < 1:
-            S['vd'] = 0
-            S['cvd'] = 0
-            return
-
-        # current candle delta approximation
-        x = c[-1]
-        rng = x['h'] - x['l']
-        if rng > 0:
-            buy_ratio = (x['c'] - x['l']) / rng
-            sell_ratio = (x['h'] - x['c']) / rng
-            S['vd'] = x['v'] * buy_ratio - x['v'] * sell_ratio
+        if not c:
+            vd = 0; cvd = 0
         else:
-            S['vd'] = 0
-
-        window = c[-n:] if len(c) >= n else c
-        cvd_sum = 0
-        for w in window:
-            r = w['h'] - w['l']
-            if r > 0:
-                buy_r = (w['c'] - w['l']) / r
-                sell_r = (w['h'] - w['c']) / r
-                cvd_sum += w['v'] * buy_r - w['v'] * sell_r
-        S['cvd'] = cvd_sum
+            x = c[-1]
+            rng = x['h'] - x['l']
+            vd = 0 if rng<=0 else x['v'] * ((x['c']-x['l'])/rng) - x['v'] * ((x['h']-x['c'])/rng)
+            window = c[-n:] if len(c) >= n else c
+            cvd_sum = 0
+            for w in window:
+                r = w['h'] - w['l']
+                if r>0:
+                    cvd_sum += w['v'] * ((w['c']-w['l'])/r) - w['v'] * ((w['h']-w['c'])/r)
+            cvd = cvd_sum
     except Exception as e:
-        log('VD ERR: ' + str(e), 'err')
+        log('VD ERR: ' + str(e), 'err'); vd=0; cvd=0
+    if target_state is None:
+        tgt['vd'] = vd; tgt['cvd'] = cvd
+        tgt['vd_hist'] = (tgt.get('vd_hist') or [])[-199:] + [vd]
+        tgt['cvd_hist'] = (tgt.get('cvd_hist') or [])[-199:] + [cvd]
+    return vd, cvd
 
 
 def calc_dom():
@@ -604,10 +616,12 @@ def calc_m5_sig():
             return 'NEUTRAL'
         ema_fast = ema(closes, fast)
         ema_slow = ema(closes, slow)
-        diff = [ema_fast[i] - ema_slow[i] for i in range(len(ema_slow))]
+        offset = slow - fast
+        diff = [ema_fast[i + offset] - ema_slow[i] for i in range(len(ema_slow))]
         sig_line = ema(diff, sign)[-1]
         hist = ema_fast[-1] - ema_slow[-1] - sig_line
         S['m5_macd']={'macd': ema_fast[-1] - ema_slow[-1],'signal': sig_line,'hist': hist}
+        S['m5_macd_hist'] = (S.get('m5_macd_hist') or [])[-199:] + [{'macd': ema_fast[-1] - ema_slow[-1],'signal': sig_line,'hist': hist}]
         if hist > 0:
             return 'BULLISH'
         elif hist < 0:
@@ -621,11 +635,11 @@ def calc_m5_sig():
 def trailing(pr):
     p=S['pos']
     if not p: return
-    if p['side']=='BUY': pnl=(pr-p['ep'])/p['ep']*100*S['lev']
-    else: pnl=(p['ep']-pr)/p['ep']*100*S['lev']
-    usdt=pnl*S['sz']/100
-    fee=abs(p['ep']*S['sz'])*S.get('_fee_rate',0.0005)+abs(pr*S['sz'])*S.get('_fee_rate',0.0005)
-    net=usdt-fee
+    qty=float(p.get('qty',0))
+    if p['side']=='BUY': pnl=(pr-p['ep'])*qty
+    else: pnl=(p['ep']-pr)*qty
+    fee=round(abs(p['ep']*qty + pr*qty)*S.get('_fee_rate',0.0005),10)
+    net=round(pnl-fee,6)
     if net<=0:
         S['trail_on']=False; S['trail_hi']=0.0; S['trail_lock']=0.0
         return
@@ -633,15 +647,16 @@ def trailing(pr):
         S['trail_on']=True; S['trail_hi']=0.0; S['trail_lock']=0.0
     if net>S['trail_hi']:
         S['trail_hi']=net
-        mp=S.get('min_profit_target_usdt',0.1)
-        step=max(1.0, mp)
-        new_lock=step*int((net/mp)+1e-9)
-        if new_lock>S.get('trail_lock',0.0):
-            S['trail_lock']=new_lock
-            S['balance_lock']=round(bal()+S['trail_lock'],2)
-            S['pnl_locks_total']=round(S.get('pnl_locks_total',0.0)+1.0,2)
-    if S.get('trail_lock',0.0)>0 and net<S['trail_lock']:
-        do_close(pr,'TRAIL_LOCK')
+        stage1_lock=8.0
+        stage2_step=1.0
+        if S['trail_lock'] < stage1_lock and net >= stage1_lock:
+            S['trail_lock'] = stage1_lock
+        else:
+            new_lock = stage2_step * int((net/stage2_step)+1e-9)
+            if new_lock > S['trail_lock']:
+                S['trail_lock'] = round(new_lock,2)
+        if S['trail_lock']>0 and net < S['trail_lock']:
+            do_close(pr,'TRAIL')
 def rule_snapshot():
     return {
         'sym':S['sym'],'tf':S['tf'],'bbP':S['bbP'],'bbD':S['bbD'],
@@ -732,12 +747,12 @@ def place(side,price):
 def do_close(price,reason):
     p=S['pos']
     if not p: return
-    if p['side']=='BUY': pnl=(price-p['ep'])/p['ep']*100*S['lev']
-    else: pnl=(p['ep']-price)/p['ep']*100*S['lev']
-    gross=pnl*S['sz']/100
-    fee=round(abs(p['ep']*S['sz'])*S.get('_fee_rate',0.0005)+abs(price*S['sz'])*S.get('_fee_rate',0.0005),2)
-    fee=min(fee, abs(gross)) if gross>=0 else fee
-    usdt=gross-fee
+    qty = float(p.get('qty', 0))
+    if p['side']=='BUY': pnl=(price-p['ep'])*qty
+    else: pnl=(p['ep']-price)*qty
+    fee=round(abs(p['ep']*qty + price*qty)*S.get('_fee_rate',0.0005),10)
+    fee=min(fee, abs(pnl)) if pnl>=0 else fee
+    usdt=round(pnl-fee,6)
     before=S['trades'][0]['bal'] if S['trades'] else bal()
     S['pnl']+=usdt
     if S['mode']=='demo': S['demo_bal']+=usdt
@@ -746,7 +761,7 @@ def do_close(price,reason):
     else: S['losses']+=1
     if S['trades']:
         if S['trades'][0]['pnl'] is None: S['trades'][0]['pnl']=round(usdt,2)
-        S['trades'][0]['gross_pnl']=round(gross,2)
+        S['trades'][0]['gross_pnl']=round(pnl,2)
         S['trades'][0]['fee']=round(fee,2)
         S['trades'][0]['bal_after']=round(bal(),2)
         S['trades'][0]['reason']=reason
@@ -770,11 +785,22 @@ def _baseline_ok(side, price):
         pnl = last.get('pnl')
         if pnl is None:
             return True
-        # Skip next entry if last trade was a loss (anti-revenge)
+        # Anti-revenge: skip entry if last trade was a loss AND within cooldown window
         if pnl < 0:
-            log('Baseline guard: skip entry after loss pnl='+str(round(pnl,2)),'warn')
-            return False
-        # Allow only if last trade met target-ish
+            loss_ts_raw = last.get('t')
+            if loss_ts_raw:
+                try:
+                    loss_ts = datetime.fromisoformat(loss_ts_raw).timestamp()
+                except Exception:
+                    loss_ts = 0
+            else:
+                loss_ts = 0
+            cooldown = 300  # seconds
+            if time.time() - loss_ts < cooldown:
+                if S.get('_baseline_logged_at', 0) < loss_ts:
+                    log('Baseline guard: skip entry after loss pnl=' + str(round(pnl, 2)), 'warn')
+                    S['_baseline_logged_at'] = time.time()
+                return False
         return True
     except Exception:
         return True
@@ -785,19 +811,19 @@ def rt_pnl():
         if '_pnl_ts' in S: S['pnl_per_sec']=0.0
         return 0.0
     pr=c[-1]['c']
-    if p['side']=='BUY': pnl=(pr-p['ep'])/p['ep']*100*S['lev']
-    else: pnl=(p['ep']-pr)/p['ep']*100*S['lev']
-    usdt=pnl*S['sz']/100
+    qty=float(p.get('qty',0))
+    if p['side']=='BUY': pnl=(pr-p['ep'])*qty
+    else: pnl=(p['ep']-pr)*qty
     try:
         now=time.time(); prev_ts=getattr(S,'_pnl_ts',None); prev_usdt=getattr(S,'_pnl_prev',None)
         if prev_ts is not None and prev_usdt is not None and now>prev_ts:
             dt=now-prev_ts
             if dt>0:
-                S['pnl_per_sec']=round((usdt-prev_usdt)/dt,4)
-        S['_pnl_ts']=now; S['_pnl_prev']=usdt
+                S['pnl_per_sec']=round((pnl-prev_usdt)/dt,4)
+        S['_pnl_ts']=now; S['_pnl_prev']=pnl
     except Exception:
         pass
-    return usdt
+    return pnl
 
 # STRATEGY
 def strategy():
@@ -849,7 +875,7 @@ def strategy():
                 S['lastT']=now;place('BUY',cl);log('REVERSE->BUY '+str(bs)+'/4','ok')
             return
 
-        if not S['pos']:
+        if not S['pos'] and S.get('executing', False):
             if S['m5_sig']=='BEARISH' and sell_ok and now-S['lastT']>=S['cd']:
                 if _baseline_ok('SELL', cl):
                     S['lastT']=now;place('SELL',cl);log('SELL score='+str(ss)+'/4 M5 aligned','ok')
@@ -927,6 +953,13 @@ def build():
         'dom_cvd':S['dom_cvd'],'dom_count':len(S['dom_hist']),'m5_sig':S['m5_sig'],
         'err_count':S['err_count'],'loop_ok':S['loop_ok'],
         'pnl_per_sec':round(S['pnl_per_sec'],4),'fee_rate':round(S.get('_fee_rate',0.0005),6),'balance_lock':round(S['balance_lock'],2),'pnl_locks_total':round(S['pnl_locks_total'],2),
+        'macd':S.get('macd'),'m5_macd':S.get('m5_macd'),
+        'macd_hist':S.get('macd_hist',[])[-200:],'m5_macd_hist':S.get('m5_macd_hist',[])[-200:],
+        'vd_hist':S.get('vd_hist',[])[-200:],'cvd_hist':S.get('cvd_hist',[])[-200:],
+        'vd5':S.get('vd5',0.0),'cvd5':S.get('cvd5',0.0),
+        'vd5_hist':S.get('vd5_hist',[])[-200:],'cvd5_hist':S.get('cvd5_hist',[])[-200:],
+        'ob':S.get('ob'),'asks_detail':S.get('asks_detail',[]),'bids_detail':S.get('bids_detail',[]),
+        'executing':S.get('executing',False),
     }
 
 # ROUTES
@@ -987,7 +1020,7 @@ def start_bot():
     S['cvdP']=int(d.get('cvdP',S['cvdP']));S['domP']=int(d.get('domP',S['domP']))
     S['lev']=int(d.get('lev',S['lev']));S['sz']=float(d.get('sz',S['sz']))
     S['sl']=float(d.get('sl',S['sl']));S['tp']=float(d.get('tp',S['tp']))
-    S['on']=True;S['cvd']=0;S['tick']=0;S['reversed']=False;S['dom_hist']=[];S['dom_cvd']=0;S['err_count']=0
+    S['on']=True;S['cvd']=0;S['tick']=0;S['reversed']=False;S['dom_hist']=[];S['dom_cvd']=0;S['err_count']=0;S['executing']=False
     reset_daily_drawdown(force=True)
     log('START '+S['sym']+' '+S['tf']+' BB('+str(S['bbP'])+','+str(S['bbD'])+') CVD_P:'+str(S['cvdP'])+' DOM_P:'+str(S['domP'])+' Lev:'+str(S['lev'])+'x'+((' TF5='+S['tf5']) if S.get('tf5') and S['tf5']!=S['tf'] else ''))
     ok=fetch_candles()
@@ -1047,6 +1080,19 @@ def export_trades():
         trades.append(out)
     return jsonify({'ok':True,'trades':trades})
 
+@app.route('/api/keys/status')
+def keys_status():
+    has_key = bool(API_KEY) and API_KEY != 'DEMO'
+    has_secret = bool(API_SECRET) and API_SECRET != 'DEMO'
+    has_pass = bool(PASSPHRASE) and PASSPHRASE != 'DEMO'
+    ws_connected = bool(S.get('ws_ok') or S.get('connected'))
+    return jsonify({
+        'ok': True,
+        'has_key': has_key,
+        'has_secret': has_secret,
+        'has_pass': has_pass,
+        'ws_prv_connected': ws_connected
+    })
 
 @app.route('/api/config',methods=['POST'])
 def update_config():
@@ -1159,6 +1205,16 @@ def force_entry():
     place(side, pr)
     p=S['pos']
     return jsonify({'ok':True,'side':side,'price':pr,'pos':p,'balance':bal(),'err_count':err_count})
+
+@app.route('/api/exec/start', methods=['POST'])
+def exec_start():
+    S['executing'] = True
+    return jsonify({'ok': True, 'executing': True})
+
+@app.route('/api/exec/stop', methods=['POST'])
+def exec_stop():
+    S['executing'] = False
+    return jsonify({'ok': True, 'executing': False})
 
 if __name__=='__main__':
     S['demo_bal']=1000.0

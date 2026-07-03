@@ -299,6 +299,29 @@ select.inp{appearance:none;cursor:pointer;padding-right:28px;
 .card:nth-child(7){animation-delay:0.3s}
 .card:nth-child(8){animation-delay:0.35s}
 .card:nth-child(9){animation-delay:0.4s}
+
+/* ─── Charts ─── */
+.tf-section{border-top:1px solid rgba(255,255,255,0.03)}
+.chart-wrap{display:flex;gap:8px;flex-wrap:wrap}
+.chart-wrap .card{flex:1;min-width:260px}
+.chart-canvas{width:100%;height:200px;display:block;background:rgba(0,0,0,0.25);border-radius:6px;border:1px solid var(--border);transition:border-color 0.3s}
+.chart-canvas:hover{border-color:var(--border-light)}
+.dom-deep{max-height:220px;overflow:auto;font-family:'JetBrains Mono',monospace;font-size:11px}
+.dom-row{display:flex;justify-content:space-between;padding:3px 6px;border-bottom:1px solid rgba(255,255,255,0.03)}
+.dom-row.bid{color:var(--cyan)}.dom-row.ask{color:var(--red)}
+.dom-ratio{margin-top:8px;text-align:center;font-size:10px;color:var(--text-dim);font-family:'JetBrains Mono',monospace;letter-spacing:0.08em;text-transform:uppercase}
+
+/* data panels */
+.kv{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.kv-row{display:flex;justify-content:space-between;align-items:center;padding:4px 6px;border:1px solid rgba(255,255,255,0.05);border-radius:6px;background:rgba(255,255,255,0.02)}
+.k{color:var(--text-dim);font-size:11px;font-family:'JetBrains Mono',monospace;text-transform:uppercase}
+.v{color:var(--text);font-size:12px;font-weight:700;font-family:'JetBrains Mono',monospace}
+.data-row{display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.05);border-radius:6px;background:rgba(255,255,255,0.02)}
+.data-row span:first-child{color:var(--text-dim);font-size:10px;font-family:'JetBrains Mono',monospace;text-transform:uppercase}
+.data-val{color:var(--text);font-size:12px;font-weight:700;font-family:'JetBrains Mono',monospace;text-align:right}
+
+/* log auto scroll */
+.log-box{scroll-behavior:smooth}
 </style>
 </head>
 <body>
@@ -423,12 +446,12 @@ select.inp{appearance:none;cursor:pointer;padding-right:28px;
       <div class="ind neut" id="indMACD">
         <div class="ind-lbl">MACD</div>
         <div class="ind-val" id="iMACD">--</div>
-        <div class="ind-sub" id="iMACDSub">F:12 S:26 Sig:9</div>
+        <div class="ind-sub" id="iMACDSub">12, 26, 9</div>
       </div>
       <div class="ind neut" id="indVD">
         <div class="ind-lbl">Volume Delta</div>
         <div class="ind-val" id="iVD">0</div>
-        <div class="ind-sub" id="iVDSub">B:0 / S:0</div>
+        <div class="ind-sub" id="iVDSub">CVD period: 20</div>
       </div>
       <div class="ind neut" id="indCVD">
         <div class="ind-lbl">Cumul. VD</div>
@@ -464,15 +487,6 @@ select.inp{appearance:none;cursor:pointer;padding-right:28px;
           <div class="score-bar"></div><div class="score-bar"></div>
         </div>
       </div>
-    </div>
-
-    <!-- DOM depth -->
-    <div class="dom-box">
-      <div class="dom-header">
-        <span style="color:var(--cyan)">Bids (Buy Wall)</span>
-        <span style="color:var(--red)">Asks (Sell Wall)</span>
-      </div>
-      <div id="domD" style="color:var(--text-dim)">--</div>
     </div>
   </div>
 
@@ -588,9 +602,82 @@ select.inp{appearance:none;cursor:pointer;padding-right:28px;
   <div class="card">
     <div class="card-head"><span class="card-title">Controls</span></div>
     <div class="btns">
-      <button class="btn btn-start" onclick="botGo()">Start</button>
-      <button class="btn btn-stop" onclick="botStop()">Stop</button>
-      <button class="btn btn-close" onclick="botClose()">Close</button>
+      <button class="btn btn-start" onclick="botGo()">Start Analisa</button>
+      <button class="btn btn-stop" onclick="botStop()">Stop Analisa</button>
+      <button class="btn btn-save" id="bEx" onclick="execGo()">Execute</button>
+      <button class="btn btn-stop" id="bExS" onclick="execStop()">Stop Execute</button>
+      <button class="btn btn-close" onclick="botClose()">Force Close</button>
+    </div>
+  </div>
+
+  <!-- ═══ MACD CHARTS ═══ -->
+  <div class="card tf-section">
+    <div class="card-head"><span class="card-title">M1 MACD</span><span class="card-meta" id="cM1">M1</span></div>
+    <div class="chart-wrap">
+      <div class="card">
+        <div class="card-head"><span class="card-title">MACD (M1)</span><span class="card-meta" id="macdSub1">--</span></div>
+        <canvas id="cMacd" class="chart-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ M1 DATA ═══ -->
+  <div class="card tf-section">
+    <div class="card-head"><span class="card-title">M1 Data</span><span class="card-meta">VD / CVD / DOM / Super DOM</span></div>
+    <div class="chart-wrap">
+      <div class="card">
+        <div class="card-head"><span class="card-title">Volume Delta</span><span class="card-meta" id="vdSub1">M1</span></div>
+        <canvas id="cVd" class="chart-canvas"></canvas>
+        <div class="data-row"><span>VD</span><span id="dVd" class="data-val">--</span><span>CVD</span><span id="dCvd" class="data-val">--</span></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><span class="card-title">Cumul. VD</span><span class="card-meta" id="cvdSub1">cvdP: 20</span></div>
+        <canvas id="cCvd" class="chart-canvas"></canvas>
+        <div class="data-row"><span>VD5</span><span id="dVd5" class="data-val">--</span><span>CVD5</span><span id="dCvd5" class="data-val">--</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ DOM DEPTH ═══ -->
+  <div class="card tf-section">
+    <div class="card-head"><span class="card-title">DOM Depth</span><span class="card-meta">imbalance</span></div>
+    <div class="chart-wrap">
+      <div class="card">
+        <div class="card-head"><span class="card-title">Imbalance</span><span class="card-meta" id="domSub1">--</span></div>
+        <canvas id="cDom" class="chart-canvas"></canvas>
+        <div class="data-row"><span>Signal</span><span id="dDomSig" class="data-val">--</span><span>Count</span><span id="dDomN" class="data-val">--</span></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><span class="card-title">DOM Cumulative</span><span class="card-meta" id="domSub2">count</span></div>
+        <canvas id="cDomCvd" class="chart-canvas"></canvas>
+        <div class="data-row"><span>Cumul</span><span id="dCdom" class="data-val">--</span><span>Imb</span><span id="dDomImb" class="data-val">--</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ M5 MACD ═══ -->
+  <div class="card tf-section">
+    <div class="card-head"><span class="card-title">M5 MACD</span><span class="card-meta" id="cM5">M5</span></div>
+    <div class="chart-wrap">
+      <div class="card">
+        <div class="card-head"><span class="card-title">MACD (M5)</span><span class="card-meta" id="macdSub2">--</span></div>
+        <canvas id="cMacd5" class="chart-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SUPER DOM ═══ -->
+  <div class="card tf-section">
+    <div class="card-head"><span class="card-title">Super DOM</span><span class="card-meta" id="domMeta">orderbook levels</span></div>
+    <div class="chart-wrap">
+      <div class="card">
+        <div class="card-head"><span class="card-title">Depth</span><span class="card-meta">asks / bids</span></div>
+        <canvas id="cOb" class="chart-canvas"></canvas>
+      </div>
+      <div class="card">
+        <div class="card-head"><span class="card-title">Levels</span><span class="card-meta" id="domLevels">--</span></div>
+        <div id="domD" class="dom-deep">--</div>
+      </div>
     </div>
   </div>
 
@@ -619,436 +706,8 @@ select.inp{appearance:none;cursor:pointer;padding-right:28px;
 
 <div class="toast" id="toast"></div>
 
-<script>
-let D = {};
-let pollTimer = null;
-let synced = false;
-let lastPrice = null;
-let priceDir = 'flat';
-let lastPosKey = '';
-const POLL_MS = 800;
+<script src="app.js"></script>
 
-document.addEventListener('DOMContentLoaded', () => {
-  pollTimer = setInterval(fetchS, POLL_MS);
-  fetchS();
-  fetch('/api/keys/status').then(r => r.json()).then(d => {
-    const el = document.getElementById('kS');
-    if (d.has_key && d.has_secret && d.has_pass) {
-      el.textContent = d.ws_prv_connected ? 'WS Connected' : 'Configured';
-      el.style.color = d.ws_prv_connected ? 'var(--cyan)' : 'var(--amber)';
-    } else {
-      el.textContent = 'Not configured';
-      el.style.color = 'var(--text-dim)';
-    }
-  }).catch(() => {});
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-    } else {
-      if (!pollTimer) { fetchS(); pollTimer = setInterval(fetchS, POLL_MS); }
-    }
-  });
-});
-
-async function fetchS() {
-  try {
-    const r = await fetch('/api/state', { cache: 'no-store' });
-    if (!r.ok) return;
-    D = await r.json();
-    render();
-    if (!synced && D.api_ok) { syncIn(); synced = true; }
-  } catch(e) {}
-}
-
-/* ═══ Render ═══ */
-function render() {
-  // Status dots
-  dot('sN', D.api_ok ? 'live' : 'off');
-  dot('sWP', D.ws_pub ? 'live' : 'off');
-  dot('sWPr', D.ws_prv ? 'live' : 'off');
-  dot('sB', D.on ? 'live' : 'off');
-
-  const srcEl = document.getElementById('sSrc');
-  srcEl.textContent = D.connected ? 'WS' : 'REST';
-  srcEl.style.color = D.connected ? 'var(--cyan)' : 'var(--amber)';
-
-  if (D.last_ticker_ts) {
-    const a = Math.floor((Date.now() - D.last_ticker_ts) / 1000);
-    const el = document.getElementById('sAge');
-    el.textContent = a < 2 ? 'LIVE' : a + 's';
-    el.style.color = a < 3 ? 'var(--cyan)' : a < 10 ? 'var(--amber)' : 'var(--red)';
-  }
-
-  if (D.indicators_ts) {
-    const ia = Math.floor((Date.now() - D.indicators_ts) / 1000);
-    const el = document.getElementById('sInd');
-    el.textContent = 'ind:' + ia + 's';
-    el.style.color = ia < 2 ? 'var(--cyan)' : ia < 5 ? 'var(--amber)' : 'var(--red)';
-  }
-
-  // Mode
-  const mb = document.getElementById('mB');
-  mb.textContent = D.mode.toUpperCase();
-  mb.className = 'badge ' + (D.mode === 'real' ? 'badge-real' : 'badge-demo');
-  document.getElementById('mD').className = 'ms-btn ' + (D.mode === 'demo' ? 'active-demo' : 'inactive');
-  document.getElementById('mR').className = 'ms-btn ' + (D.mode === 'real' ? 'active-real' : 'inactive');
-
-  // Ticker
-  const tk = D.ticker || {};
-  const p = D.price || 0;
-  if (lastPrice !== null && p !== lastPrice) priceDir = p > lastPrice ? 'up' : 'down';
-  lastPrice = p;
-
-  const tp = document.getElementById('tP');
-  tp.textContent = '$' + f(p);
-  tp.className = 'tg-val price-lg ' + (priceDir === 'up' ? 'c-up' : priceDir === 'down' ? 'c-down' : 'c-flat');
-
-  document.getElementById('tH').textContent = '$' + f(tk.high || 0);
-  document.getElementById('tL').textContent = '$' + f(tk.low || 0);
-  const ch = tk.change || 0;
-  const chEl = document.getElementById('tCh');
-  chEl.textContent = (ch >= 0 ? '+' : '') + ch.toFixed(2) + '%';
-  chEl.className = 'tg-val ' + (ch >= 0 ? 'c-up' : 'c-down');
-  document.getElementById('tB').textContent = '$' + f(tk.bid || 0);
-  document.getElementById('tA').textContent = '$' + f(tk.ask || 0);
-  document.getElementById('tS').textContent = '$' + ((tk.ask && tk.bid) ? (tk.ask - tk.bid).toFixed(2) : '0.00');
-
-  // Balance
-  document.getElementById('vB').textContent = '$' + f(D.balance || 0);
-  document.getElementById('vE').textContent = '$' + f(D.equity || 0);
-  const rp = D.realized_pnl || 0;
-  const rpEl = document.getElementById('vR');
-  rpEl.textContent = (rp >= 0 ? '+' : '') + '$' + f(rp);
-  rpEl.className = 'bal-val ' + (rp >= 0 ? 'c-up' : 'c-down');
-  document.getElementById('vWL').textContent = 'W:' + (D.wins||0) + ' L:' + (D.losses||0);
-  document.getElementById('vWR').textContent = (D.win_rate||0) + '%';
-  document.getElementById('vTT').textContent = ((D.wins||0)+(D.losses||0)) + ' trades';
-  document.getElementById('vBS').textContent = (D.mode==='demo'?'Demo':'Real') + ' $' + f(D.mode==='demo'?(D.demo_bal||0):(D.real_bal||0));
-  document.getElementById('bT').textContent = new Date().toLocaleTimeString();
-
-  renderIndicators();
-  renderPosition();
-  detectTransitions();
-
-  document.getElementById('vLog').textContent = D.log || 'Ready.';
-  document.getElementById('logTick').textContent = 'tick: ' + (D.tick||0);
-  renderTrades();
-}
-
-function renderIndicators() {
-  const bb = D.bb || {};
-  const bbm = bb.mid || 0;
-  document.getElementById('iBB').textContent = bbm > 0 ? '$' + f(bbm) : '--';
-  document.getElementById('iBBSub').textContent = 'P:' + (D.bbP||20) + ' D:' + (D.bbD||2);
-  const bbs = bb.signal || 'NEUTRAL';
-  const bbsEl = document.getElementById('iBBS');
-  bbsEl.textContent = bbs;
-  bbsEl.className = 'ind-val ' + (bbs==='BULLISH'?'c-up':bbs==='BEARISH'?'c-down':'');
-  indClass('indBBS', bbs==='BULLISH'?'bull':bbs==='BEARISH'?'bear':'neut');
-  indClass('indBB', bbs==='BULLISH'?'bull':bbs==='BEARISH'?'bear':'neut');
-
-  const vd = D.vd||0, vdb = D.vd_buy||0, vds = D.vd_sell||0;
-  const vdEl = document.getElementById('iVD');
-  vdEl.textContent = (vd>=0?'+':'') + vd.toFixed(4);
-  vdEl.className = 'ind-val ' + (vd>0?'c-up':vd<0?'c-down':'');
-  document.getElementById('iVDSub').textContent = 'B:'+vdb.toFixed(2)+' / S:'+vds.toFixed(2);
-  indClass('indVD', vd>0?'bull':vd<0?'bear':'neut');
-
-  const cvd = D.cvd||0;
-  const cvdEl = document.getElementById('iCVD');
-  cvdEl.textContent = (cvd>=0?'+':'') + cvd.toFixed(2);
-  cvdEl.className = 'ind-val ' + (cvd>0?'c-up':cvd<0?'c-down':'');
-  document.getElementById('iCVDSub').textContent = 'period: '+(D.cvdP||20)+' candles';
-  indClass('indCVD', cvd>0?'bull':cvd<0?'bear':'neut');
-
-  const dom = D.dom||'NEUTRAL';
-  const domEl = document.getElementById('iDOM');
-  domEl.textContent = dom;
-  domEl.className = 'ind-val ' + (dom==='SUPPORT'?'c-up':dom==='RESISTANCE'?'c-down':'');
-  document.getElementById('iDOMSub').textContent = 'B:'+f(D.dom_bid_vol||0)+' / A:'+f(D.dom_ask_vol||0);
-  indClass('indDOM', dom==='SUPPORT'?'bull':dom==='RESISTANCE'?'bear':'neut');
-
-  const cdom = D.dom_cvd||0;
-  const cdomEl = document.getElementById('iCDOM');
-  cdomEl.textContent = (cdom>=0?'+':'') + cdom.toFixed(2);
-  cdomEl.className = 'ind-val ' + (cdom>0?'c-up':cdom<0?'c-down':'');
-  document.getElementById('iCDOMSub').textContent = 'imb:'+(D.dom_imb||0).toFixed(1)+' n:'+(D.dom_count||0);
-  indClass('indCDOM', cdom>0?'bull':cdom<0?'bear':'neut');
-
-  // Scores
-  document.getElementById('vBS2').textContent = D.buy_score||0;
-  document.getElementById('vSS').textContent = D.sell_score||0;
-  scoreBars('bBar', D.buy_score||0, 'filled-buy');
-  scoreBars('sBar', D.sell_score||0, 'filled-sell');
-
-  document.getElementById('cda').className = 'cd-badge' + (D.cooldown_active ? ' show' : '');
-
-  renderSuperDom();
-}
-
-function renderSuperDom() {
-  const sd = D.super_dom || {};
-  const bids = sd.bids||[], asks = sd.asks||[];
-  const mx = Math.max(1, ...bids.map(b=>b.s), ...asks.map(a=>a.s));
-  let h = '';
-  const rows = Math.max(bids.length, asks.length, 5);
-  for (let i = 0; i < rows; i++) {
-    const bi = bids[i], ai = asks[i];
-    const bw = bi ? Math.max(20, Math.round(bi.s/mx*60)) : 0;
-    const aw = ai ? Math.max(20, Math.round(ai.s/mx*60)) : 0;
-    h += '<div class="dom-row">';
-    h += '<div class="dom-bid-side" style="color:var(--cyan)">';
-    if (bi) h += '<span class="dom-bar-vis" style="background:var(--cyan);width:'+bw+'px;margin-right:6px"></span>' + bi.s.toFixed(4);
-    h += '</div>';
-    h += '<div class="dom-price-col">' + (bi?f(bi.p):(ai?f(ai.p):'--')) + '</div>';
-    h += '<div class="dom-ask-side" style="color:var(--red)">';
-    if (ai) h += ai.s.toFixed(4) + '<span class="dom-bar-vis" style="background:var(--red);width:'+aw+'px;margin-left:6px"></span>';
-    h += '</div></div>';
-  }
-  const ratio = sd.ratio||0;
-  h += '<div class="dom-ratio">Ratio: <span style="color:'+(ratio>1?'var(--cyan)':'var(--red)')+';font-weight:700">'+ratio.toFixed(2)+'</span> | B:'+f(sd.total_bid||0)+' A:'+f(sd.total_ask||0)+'</div>';
-  document.getElementById('domD').innerHTML = h;
-}
-
-function renderPosition() {
-  const pos = D.pos;
-  const w = document.getElementById('pW');
-  const b = document.getElementById('pB');
-  const d = document.getElementById('pD');
-  const s = document.getElementById('pS');
-  const m = document.getElementById('pMeta');
-
-  if (!pos) {
-    w.className = 'pos-wrap';
-    b.className = 'pos-banner idle-bg';
-    s.textContent = 'No Position';
-    m.textContent = '';
-    d.innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:24px 0;font-size:11px">Waiting for signal...</div>';
-    return;
-  }
-
-  const isBuy = pos.side === 'BUY';
-  w.className = 'pos-wrap ' + (isBuy ? 'has-buy' : 'has-sell');
-  b.className = 'pos-banner ' + (isBuy ? 'buy-bg' : 'sell-bg');
-  s.textContent = pos.side + ' ' + pos.qty;
-  m.textContent = '@ ' + f(pos.ep) + ' | ' + ft(pos.duration||0);
-
-  const pnl = pos.unrealized_pnl||0;
-  const pct = pos.pnl_pct||0;
-
-  let trail = '';
-  if (pos.trail_on) {
-    const w2 = pos.trail_hi>0 ? Math.min(100, (pos.trail_lock/pos.trail_hi)*100) : 0;
-    trail = '<div style="margin-top:8px">'
-      + '<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-dim);font-family:JetBrains Mono,monospace"><span>Lock: $'+pos.trail_lock.toFixed(2)+'</span><span>Peak: $'+pos.trail_hi.toFixed(2)+'</span></div>'
-      + '<div class="trail-track"><div class="trail-fill" style="width:'+w2+'%"></div></div></div>';
-  }
-
-  const isReal = D.mode === 'real';
-  let ex = '';
-  if (isReal) {
-    const slOn = !!pos.sl_order_id, tpOn = !!pos.tp_order_id;
-    ex = '<div class="ex-bar">'
-      + '<span class="ex-pill '+(slOn?'active':'pending')+'">EX-SL: '+(slOn?'active':'pending')+'</span>'
-      + '<span class="ex-pill '+(tpOn?'active':'pending')+'">EX-TP: '+(tpOn?'active':'pending')+'</span></div>';
-  } else {
-    ex = '<div class="ex-bar"><span class="ex-pill sw">Software SL/TP (demo)</span></div>';
-  }
-
-  d.innerHTML =
-    '<div class="pos-pnl '+(pnl>=0?'c-up':'c-down')+'">'+(pnl>=0?'+':'')+'$'+f(pnl)+'</div>'
-    + '<div class="pos-pnl-sub '+(pnl>=0?'c-up':'c-down')+'">'+(pct>=0?'+':'')+pct+'% leveraged</div>'
-    + '<div class="pos-row"><span class="pos-lbl">Entry</span><span class="pos-val">'+f(pos.ep)+'</span></div>'
-    + '<div class="pos-row"><span class="pos-lbl">Current</span><span class="pos-val">'+f(pos.current_price)+'</span></div>'
-    + '<div class="pos-row"><span class="pos-lbl">Duration</span><span class="pos-val">'+ft(pos.duration||0)+'</span></div>'
-    + (pos.trail_on ? '<div class="pos-row"><span class="pos-lbl">Trailing</span><span class="pos-val c-up">ACTIVE $'+pos.trail_lock.toFixed(2)+'</span></div>' : '')
-    + ex
-    + '<div class="pos-sl-tp">'
-    + '<div><div class="stl">Stop Loss</div><div class="stv c-down">'+f(pos.sl_usdt)+'</div><div class="sts">@ '+f(pos.sl_price)+'</div></div>'
-    + '<div><div class="stl">Take Profit</div><div class="stv c-up">'+f(pos.tp_usdt)+'</div><div class="sts">@ '+f(pos.tp_price)+'</div></div>'
-    + '</div>' + trail;
-}
-
-function renderTrades() {
-  const t = D.trades||[];
-  const el = document.getElementById('tList');
-  if (!t.length) {
-    el.innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:12px;font-size:11px">No trades yet</div>';
-    return;
-  }
-  el.innerHTML = t.map(x => {
-    const p = x.pnl;
-    const c = p!=null?(p>=0?'c-up':'c-down'):'';
-    const tx = p!=null?(p>=0?'+':'')+p.toFixed(2):'open';
-    const ts = (x.t||'').substring(11,19);
-    return '<div class="trade-row">'
-      + '<span class="trade-side '+(x.side==='BUY'?'buy':'sell')+'">'+x.side+'</span>'
-      + '<span style="flex:1;color:var(--text-secondary);text-align:center;font-size:10px">'+f(x.price)+' x'+x.qty+'</span>'
-      + '<span style="font-weight:700;width:65px;text-align:right" class="'+c+'">$'+tx+'</span>'
-      + '</div>';
-  }).join('');
-}
-
-/* ═══ Transitions ═══ */
-function detectTransitions() {
-  const nk = D.pos?(D.pos.side+'@'+D.pos.ep):'none';
-  if (lastPosKey && nk !== lastPosKey) {
-    if (nk === 'none') {
-      const t = D.trades&&D.trades[0];
-      if (t && t.pnl!=null) {
-        toast((t.pnl>=0?'+':'')+'$'+t.pnl.toFixed(2)+' closed ('+t.side+')', t.pnl>=0?'ok':'err');
-      } else {
-        toast('Position closed','warn');
-      }
-    } else {
-      toast(D.pos.side+' opened @ '+f(D.pos.ep),'warn');
-    }
-  }
-  lastPosKey = nk;
-}
-
-/* ═══ Inputs ═══ */
-function syncIn() {
-  if (D.sym) document.getElementById('iSy').value = D.sym;
-  if (D.tf)  document.getElementById('iTF').value = D.tf;
-  if (D.lev) document.getElementById('iLv').value = D.lev;
-  if (D.sz)  document.getElementById('iSz').value = D.sz;
-  if (D.sl!=null) document.getElementById('iSL').value = D.sl;
-  if (D.tp!=null) document.getElementById('iTP').value = D.tp;
-  if (D.bbP)  document.getElementById('iBP').value = D.bbP;
-  if (D.bbD!=null) document.getElementById('iBD').value = D.bbD;
-  if (D.cvdP) document.getElementById('iCP').value = D.cvdP;
-  if (D.domP) document.getElementById('iDP').value = D.domP;
-  showClampHints();
-}
-
-function showClampHints() {
-  [['iLv','wLv',1,125],['iSz','wSz',1,100000],['iBP','wBP',5,500],['iCP','wCP',5,500],['iDP','wDP',5,500]].forEach(([iid,wid,lo,hi])=>{
-    const v = parseFloat(document.getElementById(iid).value);
-    document.getElementById(wid).className = 'clamp-warn' + (isFinite(v)&&(v<lo||v>hi)?' show':'');
-  });
-}
-
-async function saveK() {
-  const k = document.getElementById('iAK').value.trim();
-  const s = document.getElementById('iAS').value.trim();
-  const p = document.getElementById('iAP').value.trim();
-  if (!k&&!s&&!p) { toast('Enter at least one value','warn'); return; }
-  try {
-    const r = await fetch('/api/setkeys', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:k,secret:s,passphrase:p})});
-    const d = await r.json();
-    if (d.ok&&d.changed.length) {
-      flB('bK','SAVED');
-      toast('Keys: '+d.changed.join(', '),'ok');
-      document.getElementById('kS').textContent = 'Configured';
-      document.getElementById('kS').style.color = 'var(--cyan)';
-    }
-  } catch(e) { toast('Error: '+e.message,'err'); }
-}
-
-async function saveT() {
-  try {
-    const r = await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-      symbol:document.getElementById('iSy').value,tf:document.getElementById('iTF').value,
-      lev:+document.getElementById('iLv').value,sz:+document.getElementById('iSz').value,
-      sl:+document.getElementById('iSL').value,tp:+document.getElementById('iTP').value
-    })});
-    const d = await r.json();
-    if (d.ok) { flB('bT2','SAVED'); toast('Trading params saved','ok'); synced=false; }
-  } catch(e) { toast('Error: '+e.message,'err'); }
-}
-
-async function saveI() {
-  try {
-    const r = await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-      bbP:+document.getElementById('iBP').value,bbD:+document.getElementById('iBD').value,
-      cvdP:+document.getElementById('iCP').value,domP:+document.getElementById('iDP').value
-    })});
-    const d = await r.json();
-    if (d.ok) { flB('bI','SAVED'); toast('Indicator params saved','ok'); synced=false; }
-  } catch(e) { toast('Error: '+e.message,'err'); }
-}
-
-async function setMode(m) {
-  if (D.mode===m) return;
-  if (!confirm('Switch to '+m.toUpperCase()+' mode?')) return;
-  try {
-    const r = await fetch('/api/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:m})});
-    const d = await r.json();
-    if (d.ok) { toast('Mode: '+m.toUpperCase(),'ok'); synced=false; }
-  } catch(e) { toast('Error: '+e.message,'err'); }
-}
-
-async function botGo() {
-  try {
-    const r = await fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-      symbol:document.getElementById('iSy').value,tf:document.getElementById('iTF').value,
-      bbP:+document.getElementById('iBP').value,bbD:+document.getElementById('iBD').value,
-      cvdP:+document.getElementById('iCP').value,domP:+document.getElementById('iDP').value,
-      lev:+document.getElementById('iLv').value,sz:+document.getElementById('iSz').value,
-      sl:+document.getElementById('iSL').value,tp:+document.getElementById('iTP').value
-    })});
-    const d = await r.json();
-    if (!d.ok) { toast('Start failed: '+(d.error||'unknown'),'err'); return; }
-    toast('Bot started','ok');
-  } catch(e) { toast('Start failed: '+e.message,'err'); }
-}
-
-async function botStop() {
-  if (!confirm('Stop the bot?')) return;
-  try { await fetch('/api/stop',{method:'POST'}); toast('Bot stopped','warn'); } catch(e) { toast('Error: '+e.message,'err'); }
-}
-
-async function botClose() {
-  if (!confirm('Close current position?')) return;
-  try { await fetch('/api/close',{method:'POST'}); toast('Close sent','warn'); } catch(e) { toast('Error: '+e.message,'err'); }
-}
-
-/* ═══ Helpers ═══ */
-function indClass(id, cls) {
-  const el = document.getElementById(id);
-  el.className = 'ind ' + cls;
-}
-
-function scoreBars(id, n, cls) {
-  const bars = document.getElementById(id).children;
-  for (let i = 0; i < 4; i++) bars[i].className = 'score-bar' + (i < n ? ' ' + cls : '');
-}
-
-function dot(id, s) { document.getElementById(id).className = 'dot dot-' + s; }
-
-function f(n) {
-  if (n==null) return '0.00';
-  return parseFloat(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-}
-
-function ft(s) {
-  if (s<60) return s+'s';
-  if (s<3600) return Math.floor(s/60)+'m '+(s%60)+'s';
-  return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m';
-}
-
-function togC(el, bodyId) {
-  el.classList.toggle('open');
-  document.getElementById(bodyId).classList.toggle('show');
-}
-
-function flB(id, t) {
-  const b = document.getElementById(id);
-  const o = b.textContent;
-  b.textContent = t; b.classList.add('done');
-  setTimeout(()=>{b.textContent=o;b.classList.remove('done');},1500);
-}
-
-let toastTimer = null;
-function toast(msg, kind) {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = 'toast show ' + (kind||'');
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(()=>{el.className='toast';},3500);
-}
-</script>
 </body>
 </html>
 
